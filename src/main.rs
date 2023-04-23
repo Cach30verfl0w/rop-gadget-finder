@@ -35,23 +35,23 @@ impl<'a> GadgetBuilder<'a> {
 
     pub fn find_gadgets(&self, max_instructions: usize) -> Vec<Gadget> {
         let instructions = self.capstone.disasm_all(self.bytes, self.address).unwrap();
-        let mut last_jump_instruction = 0usize;
+        let mut last_control_flow_instruction = 0usize;
 
         let mut gadgets = Vec::new();
         for (index, instruction) in instructions.iter().clone().enumerate() {
             match instruction.mnemonic().unwrap() {
-                "call" | "je" | "jne" | "jnz" | "jz" => {
-                    last_jump_instruction = index
+                "call" | "je" | "jne" | "jnz" | "jz" | "jmp" => {
+                    last_control_flow_instruction = index
                 },
-                "jmp" => {
+                "ret" => {
                     if (index as i32 - max_instructions as i32) < 0 {
                         continue;
                     }
 
-                    let first_gadget_instruction = if index - last_jump_instruction > max_instructions {
+                    let first_gadget_instruction = if index - last_control_flow_instruction > max_instructions {
                         index - max_instructions
                     } else {
-                        last_jump_instruction
+                        last_control_flow_instruction
                     };
 
                     let mut string_instructions = Vec::new();
@@ -72,7 +72,7 @@ impl<'a> GadgetBuilder<'a> {
                         instructions: string_instructions
                     });
 
-                    last_jump_instruction = index;
+                    last_control_flow_instruction = index;
                 },
                 _ => {}
             }
@@ -102,7 +102,7 @@ pub enum Architecture {
 struct Args {
     /// The maximum of instructions in a Gadget
     #[arg(short, long, default_value_t = 32)]
-    max_instructions: u16,
+    max_instructions: usize,
 
     /// The executable or library in that the gadgets should be searched
     target_file: String,
@@ -129,7 +129,7 @@ fn main() {
 
         let bytes = &bytes.as_slice()[section_header.file_range().unwrap()];
         let gadget_builder = GadgetBuilder::new(section_header.sh_addr, bytes, Architecture::x86_64).unwrap();
-        let gadgets = gadget_builder.find_gadgets(8);
+        let gadgets = gadget_builder.find_gadgets(arguments.max_instructions);
         let regex = match &arguments.filter {
             Some(filter) => Some(Regex::new(filter).unwrap()),
             None => None
